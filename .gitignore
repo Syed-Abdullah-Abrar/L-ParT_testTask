@@ -1,0 +1,11 @@
+# .gitignore
+*.pyc
+*.code-workspace
+__pycache__/
+.pytest_cache/
+.vscode/
+checkpoints/
+data/*
+!data/.gitkeep
+docker/*
+.venv/*
