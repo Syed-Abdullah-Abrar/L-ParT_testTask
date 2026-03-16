@@ -1,6 +1,13 @@
 # Event Classification with Masked Transformer Autoencoders <img src='assets/pics/gsoc_icon.png' alt="GSoC" width='30'/>
 
-LorentzParT, a Particle Transformer model with LGATr's EquiLinear layers for jet physics tasks on JetClass dataset, including jet classification and masked particle reconstruction with momentum-conservation losses.
+This repository is an update on Lorentz-ParT model.
+## Updates include
+- Using SDPA element wise gated attention (implemented).
+- Implement Joint Embedding Predictive analysis (JEPA) for prdeiction in abstarct latent embedding.
+- Using Open AI's Titron for writing multi GPU kernels.
+- Abalation studies of the model.
+- Extending models capabilities as to include particle mass regression. 
+
 
 ## Overview
 
@@ -8,8 +15,6 @@ High-energy physics jets are complex objects composed of many particles. This re
 - Jet classification (multi-class) using attention over per-particle inputs
 - Masked particle reconstruction (predicting a masked particle’s kinematics) with conservation-aware losses
 
-![Cutaway diagram of CMS detector (retrieved from https://cds.cern.ch/record/2665537/files/)](assets/pics/cms_160312_02.png)
-*Cutaway diagram of CMS detector (retrieved from https://cds.cern.ch/record/2665537/files/)*
 
 Core components:
 - Models: `LorentzParT`, a `ParticleTransformer` with `EquiLinear` layers from `LGATr`.
