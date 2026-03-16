@@ -4,6 +4,7 @@ import argparse
 import warnings
 
 import torch
+import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from src.configs import LorentzParTConfig, TrainConfig
@@ -42,7 +43,7 @@ def main(
 ):
     # Reproducibility settings
     set_seed(seed)
-    
+
     # Load the YAML file
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -62,10 +63,11 @@ def main(
         'phi': (-0.00041169871110469103, 1.8136887550354004),
         'energy': (133.8745574951172, 167.528564453125)
     }
-    
+
     # Broadcast normalization stats to all processes
     obj_list = [norm_dict]
-    torch.distributed.broadcast_object_list(obj_list, src=0)
+    if dist.is_available() and dist.is_initialized():
+        dist.broadcast_object_list(obj_list, src=0)
     norm_dict = obj_list[0]
 
     # Create the dataset
@@ -124,7 +126,7 @@ def main(
 if __name__ == '__main__':
     # Parse command-line arguments
     args = parse_args()\
-    
+
     # Multi-GPU processing
     world_size = torch.cuda.device_count()
     if world_size > 1:

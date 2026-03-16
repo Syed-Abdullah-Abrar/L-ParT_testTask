@@ -26,11 +26,11 @@ def read_file(
     - **filepath** : _str_
         - Path to the ROOT data file.
     - **max_num_particles** : _int_
-        - The maximum number of particles to load for each jet. 
-        Jets with fewer particles will be zero-padded, 
+        - The maximum number of particles to load for each jet.
+        Jets with fewer particles will be zero-padded,
         and jets with more particles will be truncated.
     - **particle_features** : _List[str]_
-        - A list of particle-level features to be loaded. 
+        - A list of particle-level features to be loaded.
         The available particle-level features are:
             - part_px
             - part_py
@@ -52,7 +52,7 @@ def read_file(
             - part_isElectron
             - part_isMuon
     - **jet_features** : _List[str]_
-        - A list of jet-level features to be loaded. 
+        - A list of jet-level features to be loaded.
         The available jet-level features are:
             - jet_pt
             - jet_eta
@@ -65,7 +65,7 @@ def read_file(
             - jet_tau3
             - jet_tau4
     - **labels** : _List[str]_
-        - A list of truth labels to be loaded. 
+        - A list of truth labels to be loaded.
         The available label names are:
             - label_QCD
             - label_Hbb
@@ -81,7 +81,7 @@ def read_file(
     **Returns**
 
     - x_particles(_3-d numpy.ndarray_), x_jets(_2-d numpy.ndarray_), y(_2-d numpy.ndarray_)
-        - `x_particles`: a zero-padded numpy array of particle-level features 
+        - `x_particles`: a zero-padded numpy array of particle-level features
         in the shape `(num_jets, num_particle_features, max_num_particles)`.
         - `x_jets`: a numpy array of jet-level features
         in the shape `(num_jets, num_jet_features)`.
@@ -124,23 +124,13 @@ def read_file(
 
     return x_particles, x_jets, y
 
-
 def load_npy_data(data_dir: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    filepaths = [f for f in os.listdir(data_dir) if f.endswith('.root')]
-    all_xp, all_xj, all_y = [], [], []
+    # Directly load the files you already have
+    X_particles = np.load(os.path.join(data_dir, 'X_particles.npy'))
+    X_jets = np.load(os.path.join(data_dir, 'X_jets.npy'))
+    y = np.load(os.path.join(data_dir, 'y.npy'))
 
-    for fname in filepaths:
-        xp, xj, y = read_file(os.path.join(data_dir, fname))
-        all_xp.append(xp)
-        all_xj.append(xj)
-        all_y.append(y)
-        
-    X_particles = np.concatenate(all_xp, axis=0)
-    X_jets = np.concatenate(all_xj, axis=0)
-    y = np.concatenate(all_y, axis=0)
-    
     return X_particles, X_jets, y
-
 
 def build_memmap_data(data_dir: str, prefix: str) -> Tuple[str, str]:
     particles_path = os.path.join(data_dir, f"{prefix}_particles.npy")
@@ -174,8 +164,8 @@ def load_memmap_data(data_dir: str, prefix: str) -> Tuple[np.memmap, np.memmap]:
             f"Memmap files {particles_file} or {labels_file} not found; "
             f"run build_memmap_data(data_dir, '{prefix}') first."
         )
-    
+
     particles_memmap = np.load(particles_file, mmap_mode='r')
     labels_memmap = np.load(labels_file, mmap_mode='r')
-    
+
     return particles_memmap, labels_memmap

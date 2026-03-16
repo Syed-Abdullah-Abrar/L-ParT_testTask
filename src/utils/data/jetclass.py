@@ -34,7 +34,7 @@ class JetClassDataset(Dataset):
         - The masked particle features tensor of shape (max_num_particles, num_particle_features).
         - The masked target labels tensor of shape (num_particle_features,).
         - The mask index tensor of shape (1,).
-        
+
         For classification: a tuple containing the following elements:
         - The particle features tensor of shape (max_num_particles, num_particle_features).
         - The target labels tensor of shape (num_classes,).
@@ -109,10 +109,10 @@ class JetClassDataset(Dataset):
             label = torch.from_numpy(self.y[idx]).float()  # (num_classes,)
 
             return tensor, label
-        
+
     def _mask_particle(self, particles: np.ndarray, mode: str = 'random') -> Tuple[np.ndarray, np.ndarray, int]:
         valid_idx = np.where(np.any(particles != 0, axis=1))[0]
-        
+
         if mode == 'random':
             mask_idx = np.array([np.random.choice(valid_idx)])
         elif mode == 'biased':
@@ -124,17 +124,17 @@ class JetClassDataset(Dataset):
                 u = np.random.uniform(0, 1)
                 mask_idx = np.random.randint(0, particles.shape[0])
                 w = (1 / (mask_idx + 1)) / total
-                
+
             mask_idx = np.array([mask_idx])
         elif mode == 'first':
             mask_idx = valid_idx[:1]
-        
+
         masked_particles = particles.copy()
         masked_targets = masked_particles[mask_idx, :].copy()
         masked_particles[mask_idx, :] = 0.0
 
         return masked_particles, masked_targets, mask_idx
-    
+
 
 class LazyJetClassDataset(JetClassDataset):
     """
@@ -161,7 +161,7 @@ class LazyJetClassDataset(JetClassDataset):
         - The masked particle features tensor of shape (max_num_particles, num_particle_features).
         - The masked target labels tensor of shape (num_particle_features,).
         - The mask index tensor of shape (1,).
-        
+
         For classification: a tuple containing the following elements:
         - The particle features tensor of shape (max_num_particles, num_particle_features).
         - The target labels tensor of shape (num_classes,).
@@ -178,47 +178,29 @@ class LazyJetClassDataset(JetClassDataset):
     def __init__(
         self,
         data_dir: str,
-        normalize: List[bool] = [True, False, False, True],  # [pT, eta, phi, energy]
+        normalize: List[bool] = [True, False, False, True],
         norm_dict: Dict[str, Tuple[float, float]] = None,
         mask_mode: str = None,
         cache_size: int = 10
     ):
+        # Initialize the parent class
         super().__init__(None, None, normalize, norm_dict, mask_mode)
-        # Sorted absolute file paths; lexicographic groups align with classes
-        self.files = sorted(
-            os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.root')
-        )
-        # Build contiguous blocks per class
-        files_per_class = len(self.files) // 10
-        self.files_by_class = [
-            list(range(i * files_per_class, (i + 1) * files_per_class)) for i in range(10)
-        ]
-        self.events_per_file = 100_000
 
-        self.normalize = normalize
-        self.norm_dict = norm_dict
-        self.mask_mode = mask_mode
+        # 1. Import your loader here
+        from .dataloader import load_npy_data
 
-        # Small multi-file LRU cache
-        self._cache_size = int(cache_size)
+        # 2. Load the actual data arrays
+        self.X_particles, self.X_jets, self.y = load_npy_data(data_dir)
+
+        # 3. Comment out or remove the .root file logic
+        self.files = []
+        self.cache_size = cache_size
         self._cache = OrderedDict()
 
-        # Pre-build normalization arrays for fast broadcasting
-        self._feat_names = ['pT', 'eta', 'phi', 'energy']
-        if self.norm_dict is not None:
-            means, stds = [], []
-            for i, k in enumerate(self._feat_names):
-                m, s = self.norm_dict[k]
-                # pT / energy: scale by mean only; eta/phi: (x-mean)/std
-                means.append(m)
-                stds.append(s if i in (1, 2) else 1.0)  # no std use for pT/energy branch
-
-            self._means = np.array(means, dtype=np.float32)
-            self._stds = np.array(stds, dtype=np.float32)
-            self._use = np.array(self.normalize, dtype=bool)
-
     def __len__(self) -> int:
-        return len(self.files) * self.events_per_file
+        # 4. Return the length of the loaded data
+        return len(self.y)
+
 
     def _get_file(self, idx: int) -> Tuple[np.ndarray, np.ndarray]:
         # LRU hit
@@ -241,7 +223,7 @@ class LazyJetClassDataset(JetClassDataset):
     def _apply_norm_inplace(self, arr: np.ndarray) -> None:
         if self.norm_dict is None:
             return
-        
+
         # pT/energy: x /= mean ; eta/phi: (x-mean)/std
         # Mask off untouched features
         for i in range(4):
@@ -279,6 +261,7 @@ class LazyJetClassDataset(JetClassDataset):
         return masked_particles, masked_targets, mask_idx
 
     def __getitem__(self, key: Tuple[int, int]):
+        """
         file_idx, event_idx = key
         particles, labels = self._get_file(file_idx)
 
@@ -295,11 +278,13 @@ class LazyJetClassDataset(JetClassDataset):
                 torch.tensor(masked_particles, dtype=torch.float32),
                 torch.tensor(masked_targets.squeeze(0), dtype=torch.float32),
                 torch.tensor(mask_idx, dtype=torch.int64),
-            )
+           )
+           """
+        return super().__getitem__(key)
 
         # Classification path
         self._apply_norm_inplace(part)
-        
+
         return torch.from_numpy(part).float(), torch.from_numpy(label).float()
     # def __init__(
     #     self,
@@ -335,7 +320,7 @@ class LazyJetClassDataset(JetClassDataset):
     # def _load_file(self, idx: int) -> Tuple[np.ndarray, np.ndarray]:
     #     if self._cache_file_idx == idx:
     #         return self._cache_particles, self._cache_labels
-        
+
     #     particles, _, labels = read_file(self.files[idx])
     #     self._cache_file_idx = idx
     #     self._cache_particles = particles

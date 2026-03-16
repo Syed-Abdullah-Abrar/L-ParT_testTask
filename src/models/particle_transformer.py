@@ -10,46 +10,63 @@ from ..configs import ParticleTransformerConfig
 
 
 class ParticleAttentionBlock(nn.Module):
-    def __init__(
+    def init(
         self,
         embed_dim: int = 128,
         num_heads: int = 8,
         dropout: float = 0.1,
         expansion_factor: int = 4,
-    ):
-        super(ParticleAttentionBlock, self).__init__()
+        ):
+        super(ParticleAttentionBlock, self).init()
         assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
-
         self.embed_dim = embed_dim
         self.num_heads = num_heads
 
+
         self.layernorm1 = nn.LayerNorm(embed_dim)
         self.pmha = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+        embed_dim=embed_dim,
+        num_heads=num_heads,
+        dropout=dropout,
+        batch_first=True
         )
+
+        # ---------------------------------------------------------
+        # NEW: Gated Attention Projection (NeurIPS 2025)
+        # We use a linear layer to compute the query-dependent gate
+        # ---------------------------------------------------------
+        self.gate_proj = nn.Linear(embed_dim, embed_dim)
+
         self.layernorm2 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         self.feedforward = Feedforward(
-            embed_dim=embed_dim,
-            expansion_factor=expansion_factor,
-            dropout=dropout
+        embed_dim=embed_dim,
+        expansion_factor=expansion_factor,
+        dropout=dropout
         )
 
     def forward(self, x: Tensor, padding_mask: Tensor, U: Optional[Tensor] = None) -> Tensor:
         residual = x
-        x = self.layernorm1(x)
-        x, _ = self.pmha(x, x, x, key_padding_mask=padding_mask, attn_mask=U)
+        x_norm = self.layernorm1(x)
+
+        # 1. Standard Scaled Dot-Product Attention (with Particle Interaction bias U)
+        attn_out, _ = self.pmha(x_norm, x_norm, x_norm, key_padding_mask=padding_mask, attn_mask=U)
+
+        # ---------------------------------------------------------
+        # 2. NEW: Apply SDPA Elementwise Gate (G1 Position)
+        # Calculate sigmoid gate from the normalized query
+        # and modulate the attention output to remove attention sinks.
+        # ---------------------------------------------------------
+        gate = torch.sigmoid(self.gate_proj(x_norm))
+        x = attn_out * gate
+
         x = self.layernorm2(x)
         x = self.dropout(x)
-
         x += residual
         x = self.feedforward(x)
 
         return x
-    
+
 
 class ParticleTransformerEncoder(nn.Module):
     def __init__(
@@ -75,7 +92,7 @@ class ParticleTransformerEncoder(nn.Module):
                 expansion_factor=expansion_factor
             ) for _ in range(num_layers)
         ])
-    
+
     def forward(self, x: Tensor, padding_mask: Tensor, U: Tensor) -> Tensor:
         B, N, F = x.shape  # (batch_size, max_num_particles, num_particle_features)
 
@@ -90,7 +107,7 @@ class ParticleTransformerEncoder(nn.Module):
             x = layer(x, padding_mask, U)  # (B, N, embed_dim)
 
         return x  # (B, N, embed_dim)
-    
+
 
 class ParticleTransformer(nn.Module):
     """

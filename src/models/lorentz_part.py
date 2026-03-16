@@ -43,7 +43,7 @@ class LorentzParTEncoder(nn.Module):
                 expansion_factor=expansion_factor
             ) for _ in range(num_layers)
         ])
-    
+
     def forward(self, x: Tensor, padding_mask: Tensor, U: Tensor) -> Tensor:
         B, N, F = x.shape  # (batch_size, max_num_particles, 16)
 
@@ -63,7 +63,7 @@ class LorentzParTEncoder(nn.Module):
             x = layer(x, padding_mask, U)  # (B, N, embed_dim)
 
         return x  # (B, N, embed_dim)
-    
+
 
 class LorentzParT(nn.Module):
     """
@@ -249,7 +249,7 @@ class LorentzParT(nn.Module):
 
         # Load pretrained weights if provided
         if self.weights is not None:
-            state_dict = torch.load(self.weights)
+            state_dict = torch.load(self.weights, map_location=torch.device('cpu'))
             filtered_state = {
                 k[len("encoder.") :]: v
                 for k, v in state_dict.items()
