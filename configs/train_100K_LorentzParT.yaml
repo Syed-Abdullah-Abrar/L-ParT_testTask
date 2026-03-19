@@ -1,70 +1,99 @@
 model:
-    num_classes: 10
-    embed_dim: 128
-    num_heads: 8
-    num_layers: 8
-    num_cls_layers: 2
-    num_mlp_layers: 0
-    hidden_dim: 256
-    hidden_mv_channels: 8
-    in_s_channels: 
-    out_s_channels: 
-    hidden_s_channels: 16
-    attention: {}
-    mlp: {}
-    reinsert_mv_channels: 
-    reinsert_s_channels: 
-    dropout: 0.1
-    expansion_factor: 4
-    max_num_particles: 128
-    num_particle_features: 4
-    pair_embed_dims: [64, 64, 64]
-    mask: True
-    weights: ./logs/LorentzParT/best/masked_43.pt
-    inference: False
-
+    # -------------------------------------------------------------------------
+    # CORE TRANSFORMER SETTINGS
+    # -------------------------------------------------------------------------
+    num_classes: 10              # Number of output classes (JetClass has 10 jet types). Ignored when mask=True.
+    embed_dim: 128               # The dimensionality of the hidden representations inside the Transformer.
+    num_heads: 8                 # Number of attention heads in the Multi-Head Attention blocks (128 / 8 = 16 dims per head).
+    num_layers: 8                # Number of Particle Attention Blocks (the main body of the encoder).
+    num_cls_layers: 2            # Number of Class Attention Blocks (only used for classification, ignored here).
+    num_mlp_layers: 0            # Number of layers in the final classification MLP head.
+    hidden_dim: 256              # Hidden dimension size for the classification MLP head.
+    
+    # -------------------------------------------------------------------------
+    # LORENTZ-EQUIVARIANT (L-GATr) SPECIFIC SETTINGS
+    # These control the Geometric Algebra layers that enforce physics rules.
+    # -------------------------------------------------------------------------
+    hidden_mv_channels: 8        # Number of hidden "multivector" channels (for 4-momentum geometry).
+    in_s_channels: null          # Input scalar channels (set to null to auto-infer from data).
+    out_s_channels: null         # Output scalar channels.
+    hidden_s_channels: 16        # Number of hidden scalar channels (for particle IDs/types).
+    attention: {}                # Extra arguments for L-GATr's internal attention (empty = defaults).
+    mlp: {}                      # Extra arguments for L-GATr's internal MLP (empty = defaults).
+    reinsert_mv_channels: null   # Advanced L-GATr residual connection settings.
+    reinsert_s_channels: null    # Advanced L-GATr residual connection settings.
+    
+    # -------------------------------------------------------------------------
+    # REGULARIZATION & DATA SHAPES
+    # -------------------------------------------------------------------------
+    dropout: 0.1                 # 10% probability to randomly zero out neurons to prevent overfitting.
+    expansion_factor: 4          # Multiplier for the FeedForward network inside the transformer (128 * 4 = 512).
+    max_num_particles: 128       # The maximum number of particles to process per jet (pads with 0s if fewer).
+    num_particle_features: 4     # The 4 kinematic inputs per particle: [pT, eta, phi, energy].
+    pair_embed_dims: [1]         # MLP dimensions used to process pairwise interactions (distance between particles).
+    
+    # -------------------------------------------------------------------------
+    # TASK DEFINITION (CRITICAL FOR YOUR TEST TASK)
+    # -------------------------------------------------------------------------
+    mask: True                   # True = Self-Supervised Masked Autoencoder task (predicting missing particles). False = Classification.
+    weights: null
+    inference: False             # Set to False because we are actively training/updating weights.
 
 train:
-  batch_size: 30  # must be divisible by 10
+    # -------------------------------------------------------------------------
+    # BATCHING & LOSS
+    # -------------------------------------------------------------------------
+    batch_size: 30               # Number of jets processed at once. Set to 32 to prevent laptop memory crashes.
     criterion:
-        # All supported loss functions can be found in 'src/loss/loss_registry.py'
-        name: 'conservation_loss'
+        name: 'conservation_loss' # Custom loss function for masked reconstruction [2].
         kwargs:
-            loss_coef: [0.25, 0.25, 0.25, 0.25]  # [pT, eta, phi, energy]
-            reduction: 'mean'  # 'mean', 'sum', 'none'
+            loss_coef: [0.25, 0.25, 0.25, 0.25]  # Equally weights the errors for predicting [pT, eta, phi, energy].
+            reduction: 'mean'     # Averages the loss across the entire batch.
+            
+    # -------------------------------------------------------------------------
+    # OPTIMIZATION (HOW THE MODEL LEARNS)
+    # -------------------------------------------------------------------------
     optimizer:
-        # All supported optimizers can be found in 'src/optim/optim_registry.py'
-        name: 'radam'
+        name: 'radam'            # Rectified Adam (RAdam) optimizer. More stable than standard Adam early in training.
         kwargs:
-            lr: 0.001
-            weight_decay: 0.0
-            betas: [0.95, 0.999]
-            eps: 0.00001  # only for 'radam'
+            lr: 0.001            # Learning rate: how big of a step the model takes when updating weights.
+            weight_decay: 0.0    # L2 Regularization (0.0 means none is applied here).
+            betas: [0.95, 0.999] # Moving average parameters for the optimizer's momentum.
+            eps: 0.00001         # Small constant to prevent division by zero in optimizer math.
+            
     optimizer_wrapper:
-        name: 'lookahead'
+        name: 'lookahead'        # Wraps RAdam in Lookahead, which keeps a "slow" and "fast" set of weights to escape local minima [3].
         kwargs:
-            la_steps: 6
-            la_alpha: 0.5
+            la_steps: 6          # Synchronize fast/slow weights every 6 steps.
+            la_alpha: 0.5        # Blending factor between fast and slow weights.
+            
     scheduler:
-        # All supported schedulers can be found in 'src/optim/scheduler_registry.py'
-        name: 'exponential_lr'
+        name: 'exponential_lr'   # Slowly decays the learning rate over time so the model fine-tunes its predictions.
         kwargs:
-            gamma: 0.736
+            gamma: 0.736         # Multiplies the learning rate by 0.736 at defined intervals.
+            
+    # -------------------------------------------------------------------------
+    # TRAINING LOOP CONTROLS
+    # -------------------------------------------------------------------------
     callbacks:
-        # All supported callbacks can be found in 'src/utils/callbacks.py'
-        - name: 'early_stopping'
+        - name: 'early_stopping' # Automatically stops training if the model stops improving.
           kwargs:
-              monitor: 'val_loss'  # 'val_loss' or 'val_acc'
-              mode: 'min'  # 'min' or 'max'
-              patience: 5
-              min_delta: 0.001
-    num_epochs: 1
-    start_epoch: 0
-    logging_dir: 'logs'
-    logging_steps: 10000
-    progress_bar: True
-    save_best: True
-    save_ckpt: True
-    save_fig: True
-    num_workers: 2
-    pin_memory: True
+              monitor: 'val_loss'# Watches the validation loss.
+              mode: 'min'        # We want the loss to go down (minimize).
+              patience: 5        # Stop if it doesn't improve for 5 epochs.
+              min_delta: 0.001   # Minimum change required to count as an "improvement".
+              
+    num_epochs: 1                # Set to 1 for your fast local test to get baseline metrics.
+    start_epoch: 0               # Start counting epochs from 0.
+    logging_dir: 'logs'          # Folder where CSV logs and .pt weight files will be saved.
+    logging_steps: 10000         # How often to print training metrics to the console.
+    progress_bar: True           # Shows the visual tqdm loading bar in your terminal.
+    save_best: True              # Saves a separate .pt file for the epoch with the lowest val_loss.
+    save_ckpt: True              # Saves a checkpoint at the end of every epoch.
+    save_fig: True               # Generates plots of particle reconstructions during evaluation.
+    
+    # -------------------------------------------------------------------------
+    # HARDWARE EFFICIENCY
+    # -------------------------------------------------------------------------
+    num_workers: 2               # Number of CPU cores dedicated to loading data in the background (kept low for laptops).
+    pin_memory: True             # Speeds up transferring data from CPU RAM to the GPU.
