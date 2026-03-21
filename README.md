@@ -1,12 +1,12 @@
-# Event Classification with Masked Transformer Autoencoders <img src='assets/pics/gsoc_icon.png' alt="GSoC" width='30'/>
+# Event Classification with Masked Transformer Autoencoders 
 
-This repository is an update on Lorentz-ParT model.
+This repository is an update on Lorentz-ParT model. It performs test tasks for GSoC 2026 models updates.
 ## Updates include
 - Using SDPA element wise gated attention (implemented).
-- Implement Joint Embedding Predictive analysis (JEPA) for prdeiction in abstarct latent embedding.
-- Using Open AI's Titron for writing multi GPU kernels.
-- Abalation studies of the model.
-- Extending models capabilities as to include particle mass regression. 
+- Implement Joint Embedding Predictive analysis (JEPA) for prdeiction in abstarct latent embedding. (not implemented)
+- Using Open AI's Titron for writing multi GPU kernels. (not implemented)
+- Abalation studies of the model. (not implemented)
+- Extending models capabilities as to include particle mass regression. (not implemented) 
 
 
 ## Overview
@@ -35,7 +35,6 @@ Core components:
 
     ```bash
     git clone <repository-url>
-    cd Hybrid_Transformer_Thanh_Nguyen
     ```
 
 2. **Create and activate a virtual environment**
@@ -44,10 +43,10 @@ Core components:
     python -m venv venv
 
     # On Windows
-    venv\Scripts\activate
+    .venv\Scripts\activate
 
     # On macOS/Linux
-    source venv/bin/activate
+    source .venv/bin/activate
     ```
 
 3. **Install dependencies**
@@ -63,51 +62,42 @@ Core components:
 ## Data
 
 The JetClass dataset is publicly available: https://zenodo.org/records/6619768
+This code has total of 100,000 tokens from JetClass dataset and placed under `./data/`
+Since the .tar files at Zenodo had a minimum of 5M events, this repo developes a custom streaming script to dynamically pull and slice exactly 100,000 events (80k/10k/10k train/val/test splits) -npy files rather than ROOT- from Zenodo, avoiding the need to download the entire massive JetClass dataset locally. 
 
-Install and place the ROOT files under `./data/` in split folders. Example:
+Structure
 
 ```
 data/
-├── train_100M/
-├── val_5M/
-│   ├── HToBB_120.root
-│   ├── ...
-│   └── ZToQQ_124.root
+├── train_80K/
+│    ├── X_jets.npy
+│    ├── X_particles.npy
+│    └── y.npy
+├── val_10k/
+│   ├── X_jets.npy
+│   ├── X_particles.npy
+│   └── y.npy
 └── test_20M/
+    ├── X_jets.npy
+    ├── X_particles.npy
+    └── y.npy
 ```
 
-Utilities to read ROOT and build numpy arrays/live datasets are under `src/utils/data`. Per-particle features are typically `[pT, eta, phi, energy]`. Some configs use a mask to hide one particle during training and reconstruct it.
+## File changed in the test task 
+Compared to the original https://github.com/ML4SCI/CMS/tree/main/MAEs/Hybrid_Transformer_Thanh_Nguyen, the following files were edited for the test tasks.
+1. `src/models/particle_transformer.py` <br>
+- To inject the NeurIPS 2025 SDPA Elementwise Gate, self.gate_proj (a linear layer) was added and the forward pass was modified to     multiply the scaled dot-product attention output by the sigmoid of the query projection (x = attn_out * gate).
+2. `configs/train_100K_LorentzParT.yaml` (New file) <br>
+- Copied from other `.yaml` files and set the pair_embed_dims mismatch, chnaged the batch_size to 30, and set weights: null to ensure the model initialized with fresh random weights
+3. `scripts/evaluate_LorentzParT.py` <br>
+- The original codebase unconditionally called torch.distributed.broadcast_object_list, which crashes on single-GPU/CPU setups. I wrapped it in an if torch.distributed.is_initialized(): safe check, allowing the evaluation script to run locally and generate the PNGs (The training was done single CPU system)
+4. `src/utils/get_100k_dataset.py `(New Script) <br>
+- Instead of downloading 100M+ events, this script dynamically streams the Zenodo tarball and extracts exactly an 80k/10k/10k split to strictly adhere to the GSoC Test Task constraints.
+
 
 ## Configuration
 
-Experiments are defined in YAML. See `configs/train_ParT.yaml` (excerpt):
-
-```yaml
-model:
-    num_classes: 10
-    embed_dim: 128
-    num_layers: 8
-    max_num_particles: 128
-    num_particle_features: 4
-    mask: True  # enable masked-particle reconstruction mode
-    inference: False
-
-train:
-    batch_size: 128
-    criterion:
-        name: 'conservation_loss'
-        kwargs:
-            loss_coef: [0.25, 0.25, 0.25, 0.25]
-            reduction: 'mean'
-    optimizer:
-        name: 'adam'
-        kwargs: {lr: 0.0001}
-    scheduler:
-        name: exponential_lr
-        kwargs: {gamma: 0.95}
-    num_epochs: 20
-    logging_dir: logs
-```
+Experiments are defined in YAML. See `configs/train_100K_LorentzParT.yaml`
 
 Model and training configs are parsed and fed into the trainers.
 
@@ -115,69 +105,48 @@ Model and training configs are parsed and fed into the trainers.
 
 Two lightweight CLI scripts are provided under `scripts/` and use YAML experiment definitions:
 
-- Training: `scripts/train.py` — trains a `LorentzParT` model defined by the YAML config and saves logs/weights
-- Evaluation: `scripts/evaluate.py` — loads a trained model and runs evaluation/visualization on a test split
+- Training: `scripts/train_LorentzParT.py` — trains a `LorentzParT` model defined by the YAML config and saves logs/weights
+- Evaluation: `scripts/evaluate_LorentzParT.py` — loads a trained model and runs evaluation/visualization on a test split
 
-Both scripts support single-GPU / CPU runs and will spawn processes for multi-GPU (DDP) when multiple CUDA devices are visible.
 
 Train usage (example):
 
 ```bash
 # single-GPU or CPU
-python -m scripts.train \
-    --config-path ./configs/train_LorentzParT.yaml \
-    --checkpoint-path /logs/LorentzParT/checkpoints/run_01.pt \
-    --train-data-dir ./data/train_100M \
-    --val-data-dir ./data/val_5M
+python3 -m scripts.train_LorentzParT \
+    --config-path ./configs/train_100K_LorentzParT.yaml \
+    --train-data-dir ./data/train_80k \
+    --val-data-dir ./data/val_10k
 ```
 
-Key flags for `scripts/train.py`:
-- `--config-path`: Path to the YAML experiment (default: `./configs/train_LorentzParT.yaml`)
-- `--checkpoint-path`: Optional trainer checkpoint to resume from
-- `--train-data-dir`: Directory with training ROOT files
-- `--val-data-dir`: Directory with validation ROOT files
+Key flags for `scripts/train_LorentzParT.py`:
+- `--config-path`: Path to the YAML experiment 
+- `--train-data-dir`: Directory with training npy (for test task only. Use ROOT otherwise) files
+- `--val-data-dir`: Directory with validation npy (for test task only. Use ROOT otherwise) files
 
-Notes:
-- The script reads `model` and `train` sections from the YAML and constructs a `LorentzParT` model and a `Trainer` or `MaskedModelTrainer` depending on `model.mask`.
-- For multi-GPU runs the script will call `torch.multiprocessing.spawn` using `torch.cuda.device_count()` processes.
 
 Evaluate usage (example):
 
 ```bash
 # single-GPU or CPU
-python -m scripts.evaluate \
-    --config-path ./configs/train_LorentzParT.yaml \
-    --best-model-path ./logs/LorentzParT/best/run_01.pt \
-    --test-data-dir ./data/test_20M
+python3 -m scripts.evaluate_LorentzParT \
+    --config-path ./configs/train_100K_LorentzParT.yaml \
+    --best-model-path ./logs/LorentzParT/best/pid11245_20260319-060815.pt \
+    --test-data-dir ./data/test_10k
 ```
 
 Key flags for `scripts/evaluate.py`:
-- `--config-path`: Path to the YAML experiment (default: `./configs/train_LorentzParT.yaml`)
-- `--best-model-path`: Path to saved best model weights used for evaluation
-- `--test-data-dir`: Directory with test ROOT files
+- `--config-path`: Path to the YAML experiment 
+- `--best-model-path`: Path to saved best model weights used for evaluation (name for the .pt file can be specified in training script flag as checkpoint) 
+- `--test-data-dir`: Directory with test npy (for test task only. Use ROOT otherwise) files
 
-Notes:
-- `evaluate.py` builds a `Trainer`/`MaskedModelTrainer` using the same YAML and will call `trainer.evaluate(...)`.
-- For classification mode (`model.mask == False`) the script will call `trainer.evaluate` with plotting helpers such as `plot_roc_curve` and `plot_confusion_matrix` (see `src/utils/viz.py`).
-- For masked/self-supervised mode the script uses `plot_particle_reconstruction` to visualize reconstructions.
-- The evaluation script also supports multi-GPU via DDP spawn.
 
 ## Model and Losses
 
 - `src/models/lorentz_part.py`: `ParticleTransformer` backbone and heads combined with `EquiLinear` layers from `LGATr`.
 - `src/loss/`: Losses including `ConservationLoss` for masked reconstruction.
 
-## Notebooks
 
-See `notebooks/01_LorentzParT_demo.ipynb` for a quick, interactive demonstration of loading data and running the model.
-
-## Testing
-
-Run the test suite:
-
-```bash
-python -m pytest tests/ -v
-```
 
 ## Project Structure
 
