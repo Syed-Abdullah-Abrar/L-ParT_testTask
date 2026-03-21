@@ -55,10 +55,11 @@ def main(
         'phi': (-0.00041169871110469103, 1.8136887550354004),
         'energy': (133.8745574951172, 167.528564453125)
     }
-    
+
     # Broadcast normalization stats to all processes
     obj_list = [norm_dict]
-    torch.distributed.broadcast_object_list(obj_list, src=0)
+    if torch.distributed.is_initialized():
+        torch.distributed.broadcast_object_list(obj_list, src=0)
     norm_dict = obj_list[0]
 
     # Create the dataset
