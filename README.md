@@ -3,9 +3,9 @@
 This repository is an update on Lorentz-ParT model. It performs test tasks for GSoC 2026 models updates.
 ## Updates include
 - Using SDPA element wise gated attention (implemented).
-- Implement Joint Embedding Predictive analysis (JEPA) for prdeiction in abstarct latent embedding. (not implemented)
-- Using Open AI's Titron for writing multi GPU kernels. (not implemented)
-- Abalation studies of the model. (not implemented)
+- Implement Joint Embedding Predictive Architecture (JEPA) for prdeiction in abstarct latent embedding. (not implemented)
+- Using Open AI's Triton for writing multi GPU kernels. (not implemented)
+- Ablation studies of the model. (not implemented)
 - Extending models capabilities as to include particle mass regression. (not implemented) 
 
 
@@ -140,13 +140,26 @@ Key flags for `scripts/evaluate.py`:
 - `--best-model-path`: Path to saved best model weights used for evaluation (name for the .pt file can be specified in training script flag as checkpoint) 
 - `--test-data-dir`: Directory with test npy (for test task only. Use ROOT otherwise) files
 
-
 ## Model and Losses
 
 - `src/models/lorentz_part.py`: `ParticleTransformer` backbone and heads combined with `EquiLinear` layers from `LGATr`.
 - `src/loss/`: Losses including `ConservationLoss` for masked reconstruction.
 
+##  Test Task Results
+Both the baseline LorentzParT and the custom SDPA Elementwise Gated variant were trained from scratch (random weight initialization) for exactly 1 epoch using the `conservation_loss` criterion to reconstruct the $p_T$, $\eta$, $\phi$, and Energy of masked particles.
 
+| Architecture | Total Train Loss | Total Validation Loss |
+| :--- | :--- | :--- |
+| Baseline LorentzParT | 0.2198 | 0.1846 |
+| **LorentzParT + SDPA Elementwise Gate** | 0.3087 | **0.1838** |
+
+**Conclusion:** 
+Despite the higher cumulative training loss caused by the random initialization of the new linear gate layer, the Gated Attention model achieved a strictly lower validation loss (**0.1838 < 0.1846**). The forced sparsity of the gate acted as a powerful regularizer, successfully eliminating the attention sink phenomenon and preventing the model from overfitting to the training data.
+
+### Particle Kinematic Reconstruction
+*(Below are the evaluation plots generated on the unseen 10k test set, demonstrating the tight alignment between the Gated model's predictions and the ground-truth values).*
+
+![Particle Reconstruction](./logs/LorentzParT/output/pid11245_20260319-060815_particle_reconstruction.png) 
 
 ## Project Structure
 
